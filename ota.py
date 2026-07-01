@@ -7,7 +7,7 @@ from time import sleep
 from log import logger
 
 def dprint(*args):
-        logger.debug(*args)
+    logger.debug(*args)
 
 class OTAUpdater:
     """ This class handles OTA updates. It checks for updates (using version number),
@@ -38,35 +38,30 @@ class OTAUpdater:
                 json.dump({'version': self.current_version}, f)
 
     def fetch_new_code(self, filename):
-        """ Fetch the code from the repo, returns False if not found."""
+        """ Fetch the code from the repo, returns False if not found or if network fails."""
         gc.collect()
         # Fetch the latest code from the repo.
         self.firmware_url = self.repo_url + filename
         count = 0
         
         for char in filename:
-            
             if char == "/":
                 count += 1
         
         if count == 1:
             prefix1 = filename.split("/")[0]
-
             filename = filename.split("/")[1]
             if not prefix1 in os.listdir():
                 os.mkdir(prefix1)
-                
             os.chdir(prefix1)
             
         if count == 2:
             prefix1 = filename.split("/")[0]
             prefix2 = filename.split("/")[1]
-
             filename = filename.split("/")[2]
             os.chdir(prefix1)
             if not prefix2 in os.listdir():
                 os.mkdir(prefix2)
-               
             os.chdir(prefix2)
 
         if count == 3:
@@ -75,53 +70,60 @@ class OTAUpdater:
             prefix3 = filename.split("/")[2]
             os.chdir(prefix1)
             os.chdir(prefix2)
-            
             filename = filename.split("/")[3]
             if not prefix3 in os.listdir():
                os.mkdir(prefix3)
-                
             os.chdir(prefix3)
             
-        response = urequests.get(self.firmware_url)
-        if response.status_code == 200:
-    
-            # Save the fetched code to file (with prepended '_')
-            new_code = response.text
-            with open(f'_{filename}', 'w') as f:
-                f.write(new_code)
+        try:
+            response = urequests.get(self.firmware_url)
+            if response.status_code == 200:
+                # Save the fetched code to file (with prepended '_')
+                new_code = response.text
+                with open(f'_{filename}', 'w') as f:
+                    f.write(new_code)
+                
+                if not os.getcwd() == "/":
+                    os.chdir("/")
+                dprint(f'Fetched file {filename}, status: {response.status_code}')
+                return True
             
+            elif response.status_code == 404:
+                dprint(f'Firmware not found - {self.firmware_url}.')
+                if not os.getcwd() == "/":
+                    os.chdir("/")
+                return False
+                
+        except Exception as e:
+            dprint(f"Network error trying to fetch {filename}: {e}")
+            # Ensure we navigate back to root directory so future updates don't break
             if not os.getcwd() == "/":
-                
                 os.chdir("/")
-            dprint(f'Fetched file {filename}, status: {response.status_code}')
-                
-            return True
-        
-        elif response.status_code == 404:
-            dprint(f'Firmware not found - {self.firmware_url}.')
             return False
 
     def check_for_updates(self):
-        """ Check if updates are available. (Note: GitHub caches values for 5 min.)"""
+        """ Check if updates are available. Returns False if check fails or no update found."""
         gc.collect()
         dprint(f'Checking for latest version... on {self.version_url}')
-        response = urequests.get(self.version_url)
         
-        data = json.loads(response.text)
-        
-        dprint(f"data is: {data}, url is: {self.version_url}")
-        dprint(f"data version is: {data['version']}")
-        # Turn list to dict using dictionary comprehension
-        # my_dict = {data[i]: data[i + 1] for i in range(0, len(data), 2)}
-        
-        self.latest_version = int(data['version'])
-        dprint(f'latest version is: {self.latest_version}')
-        
-        # compare versions
-        newer_version_available = True if self.current_version < self.latest_version else False
-        
-        dprint(f'Newer version available: {newer_version_available}')    
-        return newer_version_available
+        try:
+            response = urequests.get(self.version_url)
+            data = json.loads(response.text)
+            
+            dprint(f"data is: {data}, url is: {self.version_url}")
+            dprint(f"data version is: {data['version']}")
+            
+            self.latest_version = int(data['version'])
+            dprint(f'latest version is: {self.latest_version}')
+            
+            # compare versions
+            newer_version_available = True if self.current_version < self.latest_version else False
+            dprint(f'Newer version available: {newer_version_available}')    
+            return newer_version_available
+            
+        except Exception as e:
+            dprint(f"Failed to check for updates due to network/JSON error: {e}")
+            return False
     
     def download_and_install_update_if_available(self):
         """ Check for updates, download and install them."""
@@ -135,7 +137,6 @@ class OTAUpdater:
             # Overwrite current code with new
             for filename in self.filename_list:
                 count = 0
-                #print('Filename :', filename)
                 for char in filename:
                     if char == "/":
                         count += 1
@@ -159,18 +160,21 @@ class OTAUpdater:
                     filename = filename.split("/")[3]
                     
                 newfile = f"_{filename}"
-                os.rename(newfile, filename)
+                
+                # Check if the file actually downloaded before trying to rename it
+                if newfile in os.listdir():
+                    os.rename(newfile, filename)
+                    dprint(f'Renamed _{filename} to {filename}, overwriting existing file')
+                else:
+                    dprint(f'Warning: Expected {newfile} was not found, skipping installation for this file.')
                 
                 if not os.getcwd() == "/":
-                
                     os.chdir("/")
-                
-                dprint(f'Renamed _{filename} to {filename}, overwriting existing file')
             
             # save the current version
             with open('version.json', 'w') as f:
                 json.dump({'version': self.latest_version}, f)
-            dprint('Update version from {self.current_version} to {self.latest_version}')
+            dprint(f'Update version from {self.current_version} to {self.latest_version}')
 
             # Restart the device to run the new code.
             dprint('Restarting device...')
@@ -178,5 +182,3 @@ class OTAUpdater:
             machine.reset() 
         else:
             dprint('No new updates available.')
-
-
