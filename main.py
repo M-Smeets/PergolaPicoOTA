@@ -18,13 +18,14 @@ if RP2:
     
 
 # define motor controller pins
-s1 = Stepper(18,19,steps_per_rev=12000,speed_sps=60)
-disable = Pin(20, Pin.OUT)
-endswitch = Pin(22, Pin.IN, Pin.PULL_UP)
-alarm = Pin(17, Pin.IN, Pin.PULL_UP)
+s1 = Stepper(21,20,19, steps_per_rev=768000, speed_sps=4000)
+disable = Pin(22, Pin.OUT)
+endswitch1 = Pin(27, Pin.IN, Pin.PULL_UP)
+endswitch2 = Pin(28, Pin.IN, Pin.PULL_UP)
+alarm = Pin(18, Pin.IN, Pin.PULL_UP)
 LED = machine.Pin("LED",machine.Pin.OUT)
-rain = Pin(16, Pin.IN, Pin.PULL_UP)
-pin = Pin(18, Pin.OUT)
+rain = Pin(14, Pin.IN, Pin.PULL_UP)
+#pin = Pin(18, Pin.OUT)
 
 # Default  MQTT_BROKER to connect to
 #MQTT Details
@@ -45,9 +46,9 @@ PUBLISH_TOPIC5 = str(GROUP_ID)+"/rain"
 gc_text = ''
 DATAFILENAME = 'data.txt'
 LOGFILENAME = 'debug.log'
-LOGFILENAME1 = 'debug.log1'
-LOGFILENAME2 = 'debug.log2'
-LOGFILENAME3 = 'debug.log3'
+LOGFILENAME1 = 'debug.log.1'
+LOGFILENAME2 = 'debug.log.2'
+LOGFILENAME3 = 'debug.log.3'
 ERRORLOGFILENAME = 'errorlog.txt'
 
 # Variables
@@ -94,77 +95,72 @@ async def log_handling():
     
     global connected
     global timestamp
-
+    
     local_time = time.localtime()
     record("power-up @ (%d, %d, %d, %d, %d, %d, %d, %d)" % local_time)
     
-    
-        
     try:
-        while True:
+        #gc.collect()
+        
+        y = local_time[0]  # curr year
+        mo = local_time[1] # current month
+        d = local_time[2]  # current day
+        h = local_time[3]  # curr hour
+        m = local_time[4]  # curr minute
+        s = local_time[5]  # curr second
+        
+        timestamp = f"{h:02}:{m:02}:{s:02}"
+        
+        # Test WiFi connection twice per minute
+        if s in (15, 45):
+            if not connected:
+                record(f"{timestamp} WiFi not connected")
+                
+            elif connected:
+                get_ntp()
+                dprint('ntp done')
+                await asyncio.sleep_ms(0)
+        
+        # Print time on 30 min intervals
+        if s in (1,) and not m % 30:
+            try:
+                record(f"datapoint @ {timestamp}")
+                
+                gc_text = f"free: {str(gc.mem_free())}\n"
+                gc.collect()
+                await asyncio.sleep_ms(0)
+                
+            except Exception as e:
+                with open(ERRORLOGFILENAME, 'a') as file:
+                    file.write(f"error printing: {repr(e)}\n")
 
-            gc.collect()
-            y = local_time[0]  # curr year
-            mo = local_time[1] # current month
-            d = local_time[2]  # current day
-            h = local_time[3]  # curr hour
-            m = local_time[4]  # curr minute
-            s = local_time[5]  # curr second
+        # Once daily (during the wee hours)
+        if h == 9 and m == 33 and s == 59:
             
-            timestamp = f"{h:02}:{m:02}:{s:02}"
+            # Read lines from previous day
+            with open(DATAFILENAME) as f:
+                lines = f.readlines()
+
+            # first line is yesterday's date
+            yesterdate = lines[0].split()[-1].strip()
+
+            # cull all lines containing '@'
+            lines = [line
+                     for line in lines
+                     if '@' not in line]
             
-            # Test WiFi connection twice per minute
-            if s in (15, 45):
-                if not connected:
-                    record(f"{timestamp} WiFi not connected")
-                    
-                elif connected:
-                    settime()
-                    dprint('ntp done')
-                    await asyncio.sleep_ms(0)
+            # Log lines from previous day
+            with open(LOGFILENAME, 'a') as f:
+                for line in lines:
+                    f.write(line)
             
-            # Print time on 30 min intervals
-            if s in (1,) and not m % 30:
-                try:
-                    record(f"datapoint @ {timestamp}")
-                    
-                    gc_text = f"free: {str(gc.mem_free())}\n"
-                    gc.collect()
-                    await asyncio.sleep_ms(0)
-                    
-                except Exception as e:
-                    with open(ERRORLOGFILENAME, 'a') as file:
-                        file.write(f"error printing: {repr(e)}\n")
-
-            # Once daily (during the wee hours)
-            if h == 9 and m == 33 and s == 59:
-                
-                # Read lines from previous day
-                with open(DATAFILENAME) as f:
-                    lines = f.readlines()
-
-                # first line is yesterday's date
-                yesterdate = lines[0].split()[-1].strip()
-
-                # cull all lines containing '@'
-                lines = [line
-                         for line in lines
-                         if '@' not in line]
-                
-                # Log lines from previous day
-                with open(LOGFILENAME, 'a') as f:
-                    for line in lines:
-                        f.write(line)
-                
-                # Start a new data file for today
-                with open(DATAFILENAME, 'w') as file:
-                    file.write('Date: %d/%d/%d\n' % (mo, d, y))
-                print('file refresh done')
-                
-                
+            # Start a new data file for today
+            with open(DATAFILENAME, 'w') as file:
+                file.write('Date: %d/%d/%d\n' % (mo, d, y))
+            print('file refresh done')
             await asyncio.sleep_ms(0)
-            
-            
+        
+        
 
 
     except Exception as e:
@@ -177,7 +173,6 @@ async def serve_client(reader, writer):
     
     
     try:
-        
         #gc.collect()
         
         print("Client connected")
@@ -186,13 +181,16 @@ async def serve_client(reader, writer):
         
         # We are not interested in HTTP request headers, skip them
         while await reader.readline() != b"\r\n":
-            await asyncio.sleep_ms(0)
             pass
 
         version = f"MicroPython Version: {sys.version}"
 
-        
-        if '/log1' in request_line.split()[1]:
+        if '/log' in request_line.split()[1]:
+            with open(LOGFILENAME) as file:
+                data = file.read()
+            heading = "Debug"
+            print('log demanded')
+        elif '/log1' in request_line.split()[1]:
             with open(LOGFILENAME1) as file:
                 data = file.read()
             heading = "Debug1"
@@ -207,11 +205,6 @@ async def serve_client(reader, writer):
                 data = file.read()
             heading = "Debug3"
             print('log3 demanded')
-        elif '/log' in request_line.split()[1]:
-            with open(LOGFILENAME) as file:
-                data = file.read()
-            heading = "Debug"
-            print('log demanded')
         elif '/err' in request_line.split()[1]:
             with open(ERRORLOGFILENAME) as file:
                 data = file.read()
@@ -258,11 +251,24 @@ async def heartbeat():
         LED(s)
         s = not s
 
+async def wifi_han(state):
+    global connected
+    s = "rssi: {}dB"
+    LED(not state)
+    if state:
+        connected = True
+        dprint('Wifi is up')
+        dprint(s.format(rssi))
+    else:
+        dprint('Wifi is down')
+        connected = False
+    await asyncio.sleep_ms(0)
+
 async def get_rssi():
     global rssi
     s = network.WLAN()
     ssid = config["ssid"].encode("UTF8")
-    
+    #while True:
     try:
         while True:
             
@@ -277,19 +283,25 @@ async def get_rssi():
             
     await asyncio.sleep(30)
 
+async def get_ntp():
+    #gc.collect()
+    
+    try:
+            
+        settime()
+        rtc = machine.RTC()
+        utc_shift = 1
 
-async def wifi_han(state):
-    global connected
-    s = "rssi: {}dB"
-    LED(not state)
-    if state:
-        connected = True
-        dprint('Wifi is up')
-    else:
-        dprint('Wifi is down')
-        connected = False
-    await asyncio.sleep_ms(0)
- 
+        tm = time.localtime(time.mktime(time.localtime()) + utc_shift*3600)
+        tm = tm[0:3] + (0,) + tm[3:6] + (0,)
+        rtc.datetime(tm)
+        await asyncio.sleep_ms(0)
+        
+    except OSError as e:
+        with open(ERRORLOGFILENAME, 'a') as file:
+            file.write(f"OSError while trying to set time: {str(e)}\n")        
+        
+    print("machine time is:",(time.localtime()))
 
 # If you connect with clean_session True, must re-subscribe (MQTT spec 3.1.2.4)
 async def conn_han(client):
@@ -297,7 +309,6 @@ async def conn_han(client):
     await client.subscribe(SUBSCRIBE_TOPIC1, qos=1)
     await client.subscribe(SUBSCRIBE_TOPIC2, qos=1)
     await client.subscribe(SUBSCRIBE_TOPIC3, qos=1)
-    await client.subscribe(SUBSCRIBE_TOPIC4, qos=1)
     await asyncio.sleep_ms(0)
 
 # Subscription callback
@@ -326,7 +337,8 @@ def sub_cb(topic, msg, retained):
                         
         elif str(msg.decode()) == "Update":
             cmdOTA = True
-            
+
+    
     elif topic.decode() == SUBSCRIBE_TOPIC4:
         if not 'rain' in CLIENT_ID:
             if str(msg.decode()) != "Raining":
@@ -395,54 +407,46 @@ async def homing():
     #gc.collect()
 
     while True:
+        
         await asyncio.sleep(1)
         await client.publish(PUBLISH_TOPIC1, f"Homing", qos=1)
         dprint("Homing")
-        
+
         #Crash recovery
-        if endswitch() and not alarm():
+        if endswitch1() and endswitch2() and not alarm():
+            
             await client.publish(PUBLISH_TOPIC1, f"Crash detected, recovery started", qos=1)
             dprint("Crash detected, recovery started")
             LED(1)
-            s1.speed(60) #use low speed for the calibration
+            s1.speed(4000) #use low speed for the calibration
              
-            disable(0)
-            s1.free_run(1)
-            now = time.time()
-            delay = 10
-            while endswitch.value() == 1 and not alarm(): #wait till the switch is triggered
-                if time.time() > now + delay:
-                    s1.stop()
-                    dprint("Changing direction")
-                    break
+            while endswitch1() and not alarm(): #wait till the switch is triggered
+                disable(0)
+                s1.free_run(-1) 
                 await asyncio.sleep(1)
                 pass
             
-            
-            s1.free_run(-1) 
-            now = time.time()
-            delay = 10
-            while endswitch.value() == 1 and not alarm(): #wait till the switch is triggered
-                if time.time() > now + delay:
-                    s1.stop()
-                    disable(1)
-                    dprint("Recovery failed! Entered sleep until reboot")
-                    await client.publish(PUBLISH_TOPIC1, f"Recovery failed! Entered sleep until reboot", qos=1)
-                    await asyncio.sleep(5)
-                    machine.lightsleep()
+        elif endswitch1() and not endswitch2() and not alarm(): 
+            await client.publish(PUBLISH_TOPIC1, f"Crash detected, recovery started", qos=1)
+            dprint("Crash detected, recovery started")
+            LED(1)
+            s1.speed(4000) #use low speed for the calibration
+             
+            while endswitch1() and not alarm(): #wait till the switch is triggered
+                disable(0)
+                s1.free_run(1) 
                 await asyncio.sleep(1)
                 pass
             await client.publish(PUBLISH_TOPIC1, f"Recovery successful, homing started", qos=1)
             print("Recovery successful, start homing")
             
-#Homing            
-        if not endswitch() and not alarm():
+        #Homing            
+        if not endswitch1() and not alarm():
             LED(1)
-            s1.speed(60) #use low speed for the calibration
+            s1.speed(4000) #use low speed for the calibration
             s1.free_run(-1) #move backwards
             disable(0)
-            while endswitch.value() == 0 and not alarm(): #wait till the switch is triggered
-                await asyncio.sleep(0)
+            while endswitch1.value() == 0 and not alarm(): #wait till the switch is triggered
                 pass
         
             s1.stop() #stop as soon as the switch is triggered
@@ -454,7 +458,7 @@ async def homing():
 
             now = time.time()
             delay = 3
-            while endswitch.value() == 1 and not alarm(): #wait till the switch is triggered
+            while endswitch1.value() == 1 and not alarm(): #wait till the switch is triggered
                 if time.time() > now + delay:
                     s1.stop()
                     disable(1)
@@ -468,7 +472,7 @@ async def homing():
             s1.stop() #stop as soon as the switch is triggered
             s1.overwrite_pos(0) #set position as 0 point
             s1.target(0) #set the target to the same value to avoid unwanted movement
-            s1.speed(60) #return to default speed
+            s1.speed(4000) #return to default speed
             s1.track_target() #start stepper again
             disable(1)
             await client.publish(PUBLISH_TOPIC1, f"Homing successful", qos=1)
@@ -492,140 +496,87 @@ async def motion():
     oldVal = False
     updatepos = False
     s = "rssi: {}dB"
-    try:
+
+    while True and not alarm():
         
-        while True and not alarm():
-            
-            #await asyncio.sleep(0)
-            
-            gc.collect()
-            m = gc.mem_free()
-            i = 0           
-            
-            if s1.get_pos() != pos and not endswitch():
-                
-                await client.publish(PUBLISH_TOPIC1, f"Moving from: " + str(s1.get_pos()) + " to "+ str(pos), qos=1)
-                await asyncio.sleep(0)
-                disable(0)            
-                time.sleep(1)
-                while s1.get_pos() != pos and not endswitch():
-                    await asyncio.sleep(0)
-                    s1.target(pos)
-                    pass
-                
-                updatepos = True
-                
-            elif s1.get_pos() == pos and not endswitch() and updatepos:
-                disable(1)
-                await client.publish(PUBLISH_TOPIC1, f"Ready", qos=1)
-                await client.publish(PUBLISH_TOPIC2, str(s1.get_pos()), qos=1)
-                await client.publish(PUBLISH_TOPIC3, s.format(rssi, m), qos=1)
-                dprint("Ready")
-                dprint("Moved to: "+ str(pos))
-                dprint(s.format(rssi))
-                await asyncio.sleep(0.5)
-                updatepos = False
-             
-            elif cmdReboot:
-                await reboot()
-                 
-            elif cmdOTA:
-                await runOTA()
+        gc.collect()
+        m = gc.mem_free()
+        i = 0           
         
+        if s1.get_pos() != pos and not endswitch1():
+            disable(0)
             
-    
-            elif endswitch():
-                s1.stop()
-                disable(1)
-                            
-                if pos >= s1.get_pos():
-                    s1.free_run(-1)
-                    disable(0)
-                    now = time.time()
-                    delay = 3           
-                    while endswitch.value() == 1: #wait till the switch is triggered
-                        if time.time() > now + delay:
-                            dprint("Recovery failed")
-                            await client.publish(PUBLISH_TOPIC1, f"Recovery failed!", qos=1)
-                            s1.stop()
-                            disable(1)
-                            await asyncio.sleep(5)
-                            sys.exit("Recovery failed!")
-                        pass
-                    
-                elif pos <= s1.get_pos():
-                    s1.free_run(1)
-                    disable(0)
-                    now = time.time()
-                    delay = 3           
-                    while endswitch.value() == 1: #wait till the switch is triggered
-                        if time.time() > now + delay:
-                            dprint("Recovery failed")
-                            await client.publish(PUBLISH_TOPIC1, f"Recovery failed!", qos=1)
-                            s1.stop()
-                            disable(1)
-                            await asyncio.sleep(5)
-                            sys.exit("Recovery failed!")
-                        pass
-                await asyncio.sleep(0.5)
-                s1.stop()
+            await client.publish(PUBLISH_TOPIC1, f"Moving from: " + str(s1.get_pos()) + " to "+ str(pos), qos=1)
+            await asyncio.sleep(0)
+            time.sleep(1)
+            
+            while s1.get_pos() != pos and not endswitch1():
                 
-                await client.publish(PUBLISH_TOPIC1, f"Positioning error!", qos=1)
-                dprint("Positioning error!")
-                await asyncio.sleep(5)
-                await homing()
-                break
+                s1.target(pos)
+                pass
             
-            await swap_io()
-            await asyncio.sleep_ms(0)
-    
-        while True and alarm():
+            updatepos = True
             
-            if not oldVal:
-                        
-                await client.publish(PUBLISH_TOPIC1, f"DRIVE ALARM", qos=1)
-                oldVal = True
-                
-            s1.stop()
+        elif s1.get_pos() == pos and not endswitch1() and updatepos:
             disable(1)
-            dprint("DRIVE ALARM")
-            await homing()
-            
-    except OSError as e:
+            await client.publish(PUBLISH_TOPIC1, f"Ready", qos=1)
+            await client.publish(PUBLISH_TOPIC2, str(s1.get_pos()), qos=1)
+            await client.publish(PUBLISH_TOPIC3, s.format(rssi, m), qos=1)
+            dprint("Ready")
+            dprint("Moved to: "+ str(pos))
+            dprint(s.format(rssi))
+            await asyncio.sleep(0.5)
+            updatepos = False
+         
+        elif cmdReboot:
+            await reboot()
+             
+        elif cmdOTA:
+            await runOTA()
+    
         
-        with open(ERRORLOGFILENAME, 'a') as file:
-            file.write(f"motion loop failed: {str(e)}\n")
+        # Crash detection
+        elif endswitch1():
+            await client.publish(PUBLISH_TOPIC1, f"Positioning error!", qos=1)
+            dprint("Positioning error!")
+            await homing()
+            break
+        
+        await swap_io()
+        await asyncio.sleep_ms(0)
+
+    while True and alarm():
+        
+        if not oldVal:
+                    
+            await client.publish(PUBLISH_TOPIC1, f"DRIVE ALARM", qos=1)
+            oldVal = True
             
+        s1.stop()
+        disable(1)
+        dprint("DRIVE ALARM")
+        await homing()
+
 async def OTA():
     
     global cmdOTA
-
-    try:
-            
-        # Check for OTA updates
-        repo_name = "PergolaPicoOTA"
-        branch = "refs/heads/main"
-        firmware_url = f"https://github.com/M-Smeets/{repo_name}/{branch}/"
-        ota_updater = OTAUpdater(firmware_url,
-                                 "main.py",
-                                 "ota.py",
-                                 "log.py",
-                                 "time.py",
-                                 "lib/ntptime.py",
-                                 "lib/logging/handlers.py",
-                                 "lib/logging/__init__.py",
-                                 "lib/stepper/__init__.py",
-                                 )
-        ota_updater.download_and_install_update_if_available()
-        cmdOTA = False
-        await client.publish(PUBLISH_TOPIC1, f"No update available", qos=1)
-        await asyncio.sleep_ms(0)
-    
-    except OSError as e:
-        
-        with open(ERRORLOGFILENAME, 'a') as file:
-            file.write(f"OTA failed: {str(e)}\n")
-        return
+    # Check for OTA updates
+    repo_name = "PergolaPicoOTA"
+    branch = "refs/heads/main"
+    firmware_url = f"https://github.com/MartiMan79/{repo_name}/{branch}/"
+    ota_updater = OTAUpdater(firmware_url,
+                             "main.py",
+                             "ota.py",
+                             "log.py",
+                             "lib/ntptime.py",
+                             "lib/logging/handlers.py",
+                             "lib/logging/__init__.py",
+                             "lib/stepper/__init__.py",
+                             )
+    ota_updater.download_and_install_update_if_available()
+    cmdOTA = False
+    await client.publish(PUBLISH_TOPIC1, f"No update available", qos=1)
+    await asyncio.sleep_ms(0)
 
 async def main():
 
