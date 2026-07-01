@@ -18,7 +18,7 @@ if RP2:
     
 
 # define motor controller pins
-s1 = Stepper(21,20,19, steps_per_rev=6000, speed_sps=40)
+s1 = Stepper(21,20,19, steps_per_rev=12000, speed_sps=80)
 disable = Pin(22, Pin.OUT)
 endswitch1 = Pin(27, Pin.IN, Pin.PULL_UP)
 endswitch2 = Pin(28, Pin.IN, Pin.PULL_UP)
@@ -418,7 +418,7 @@ async def homing():
             await client.publish(PUBLISH_TOPIC1, f"Crash detected, recovery started", qos=1)
             dprint("Crash detected, recovery started")
             LED(1)
-            s1.speed(40) #use low speed for the calibration
+            s1.speed(80) #use low speed for the calibration
              
             while endswitch1() and not alarm(): #wait till the switch is triggered
                 disable(0)
@@ -430,7 +430,7 @@ async def homing():
             await client.publish(PUBLISH_TOPIC1, f"Crash detected, recovery started", qos=1)
             dprint("Crash detected, recovery started")
             LED(1)
-            s1.speed(40) #use low speed for the calibration
+            s1.speed(80) #use low speed for the calibration
              
             while endswitch1() and not alarm(): #wait till the switch is triggered
                 disable(0)
@@ -443,7 +443,7 @@ async def homing():
         #Homing            
         if not endswitch1() and not alarm():
             LED(1)
-            s1.speed(40) #use low speed for the calibration
+            s1.speed(80) #use low speed for the calibration
             s1.free_run(-1) #move backwards
             disable(0)
             while endswitch1.value() == 0 and not alarm(): #wait till the switch is triggered
@@ -472,7 +472,7 @@ async def homing():
             s1.stop() #stop as soon as the switch is triggered
             s1.overwrite_pos(0) #set position as 0 point
             s1.target(0) #set the target to the same value to avoid unwanted movement
-            s1.speed(40) #return to default speed
+            s1.speed(80) #return to default speed
             s1.track_target() #start stepper again
             disable(1)
             await client.publish(PUBLISH_TOPIC1, f"Homing successful", qos=1)
