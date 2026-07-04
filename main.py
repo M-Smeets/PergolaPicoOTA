@@ -19,7 +19,7 @@ if RP2:
 
 # define motor controller pins
 s1 = Stepper(21,20,19, steps_per_rev=12000, speed_sps=80)
-disable = Pin(22, Pin.OUT)
+#disable = Pin(22, Pin.OUT)
 endswitch1 = Pin(27, Pin.IN, Pin.PULL_UP)
 endswitch2 = Pin(28, Pin.IN, Pin.PULL_UP)
 alarm = Pin(18, Pin.IN, Pin.PULL_UP)
@@ -421,7 +421,7 @@ async def homing():
             s1.speed(80) #use low speed for the calibration
              
             while endswitch1() and not alarm(): #wait till the switch is triggered
-                disable(0)
+                s1.en_pin(0)
                 s1.free_run(-1) 
                 await asyncio.sleep(1)
                 pass
@@ -433,7 +433,7 @@ async def homing():
             s1.speed(80) #use low speed for the calibration
              
             while endswitch1() and not alarm(): #wait till the switch is triggered
-                disable(0)
+                s1.en_pin(0)
                 s1.free_run(1) 
                 await asyncio.sleep(1)
                 pass
@@ -445,7 +445,7 @@ async def homing():
             LED(1)
             s1.speed(80) #use low speed for the calibration
             s1.free_run(-1) #move backwards
-            disable(0)
+            s1.en_pin(0)
             while endswitch1.value() == 0 and not alarm(): #wait till the switch is triggered
                 pass
         
@@ -461,7 +461,7 @@ async def homing():
             while endswitch1.value() == 1 and not alarm(): #wait till the switch is triggered
                 if time.time() > now + delay:
                     s1.stop()
-                    disable(1)
+                    s1.en_pin(1)
                     dprint("Homing failed!")
                     await client.publish(PUBLISH_TOPIC1, f"Homing failed!", qos=1)
                     await asyncio.sleep(5)
@@ -474,14 +474,14 @@ async def homing():
             s1.target(0) #set the target to the same value to avoid unwanted movement
             s1.speed(80) #return to default speed
             s1.track_target() #start stepper again
-            disable(1)
+            s1.en_pin(1)
             await client.publish(PUBLISH_TOPIC1, f"Homing successful", qos=1)
             dprint("Homing successful")
             
         if alarm():
             await client.publish(PUBLISH_TOPIC1, f"DRIVE ALARM", qos=1)
             s1.stop()
-            disable(1)
+            s1.en_pin(1)
             dprint("DRIVE ALARM")
             await homing()
         LED(0)
@@ -504,7 +504,7 @@ async def motion():
         i = 0           
         
         if s1.get_pos() != pos and not endswitch1():
-            disable(0)
+            s1.en_pin(0)
             
             await client.publish(PUBLISH_TOPIC1, f"Moving from: " + str(s1.get_pos()) + " to "+ str(pos), qos=1)
             await asyncio.sleep(0)
@@ -518,7 +518,7 @@ async def motion():
             updatepos = True
             
         elif s1.get_pos() == pos and not endswitch1() and updatepos:
-            disable(1)
+            s1.en_pin(1)
             await client.publish(PUBLISH_TOPIC1, f"Ready", qos=1)
             await client.publish(PUBLISH_TOPIC2, str(s1.get_pos()), qos=1)
             await client.publish(PUBLISH_TOPIC3, s.format(rssi, m), qos=1)
@@ -553,7 +553,7 @@ async def motion():
             oldVal = True
             
         s1.stop()
-        disable(1)
+        s1.en_pin(1)
         dprint("DRIVE ALARM")
         await homing()
 
