@@ -64,42 +64,45 @@ connected = False
 cmdReboot = False
 cmdOTA = False
 
-# HTML file
+# Shared button group markup
+BUTTONS_HTML = """
+<div style="display: flex; gap: 15px; margin: 20px 0;">
+    <form action="/trigger_ota" method="POST" style="margin: 0;">
+        <button type="submit" style="padding: 12px 24px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button>
+    </form>
+    <form action="/trigger_reboot" method="POST" style="margin: 0;">
+        <button type="submit" style="padding: 12px 24px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button>
+    </form>
+    <form action="/trigger_homing" method="POST" style="margin: 0;">
+        <button type="submit" style="padding: 12px 24px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button>
+    </form>
+</div>
+"""
+
 if 'rain' in CLIENT_ID:
-    
     html = """<!DOCTYPE html>
-    <html>
-        <head> <title>Pergola controller with rain sensor</title> </head>
-        <body> <h1>Pergola shading control with rain sensor</h1>
-            <pre>%s
-                <form action="/trigger_ota" method="POST">
-                    <button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; cursor: pointer; font-size: 16px;">Trigger OTA Update</button>
-                </form>
-                <br>
-            </pre>
-            <h3>%s</h3>
-            <h4>%s</h4>
-        </body>
-    </html>
-    """
-    
-elif not 'rain' in CLIENT_ID:
-    
+<html>
+<head> <title>Pergola controller with rain sensor</title> </head>
+<body> <h1>Pergola shading control with rain sensor</h1>
+""" + BUTTONS_HTML + """
+<h3>%s</h3>
+<h4>%s</h4>
+<pre>%s</pre>
+</body>
+</html>
+"""
+else:
     html = """<!DOCTYPE html>
-    <html>
-        <head> <title>Pergola controller</title> </head>
-        <body> <h1>Pergola shading control</h1>
-            <pre>%s
-                <form action="/trigger_ota" method="POST">
-                    <button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; cursor: pointer; font-size: 16px;">Trigger OTA Update</button>
-                </form>
-                <br>
-            </pre>
-            <h3>%s</h3>
-            <h4>%s</h4>
-        </body>
-    </html>
-    """
+<html>
+<head> <title>Pergola controller</title> </head>
+<body> <h1>Pergola shading control</h1>
+""" + BUTTONS_HTML + """
+<h3>%s</h3>
+<h4>%s</h4>
+<pre>%s</pre>
+</body>
+</html>
+"""
 
 async def log_handling():
     
