@@ -187,6 +187,7 @@ async def serve_client(reader, writer):
         
         print("Client connected")
         request_line = await reader.readline()
+        request_path = request_line.split()[1].decode()
         print("Request:", request_line)
         
         # We are not interested in HTTP request headers, skip them
@@ -194,7 +195,13 @@ async def serve_client(reader, writer):
             pass
 
         version = f"MicroPython Version: {sys.version}"
-
+        
+        if '/trigger_ota' in request_path:
+            cmdOTA = True  # Sets global flag for the main loop
+            heading = "OTA Update Triggered Successfully!"
+            data = "Pico is updating and will reboot..."
+            print('OTA update initiated via Web Interface')
+        
         if '/log' in request_line.split()[1]:
             with open(LOGFILENAME) as file:
                 data = file.read()
