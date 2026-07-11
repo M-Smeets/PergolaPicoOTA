@@ -78,6 +78,9 @@ BUTTONS_HTML = """
 </div>
 """
 
+# HTML Document Closing Tag Template
+HTML_END = """<pre>%s</pre></body></html>"""
+
 if 'rain' in CLIENT_ID:
     html = """<!DOCTYPE html>
 <html>
