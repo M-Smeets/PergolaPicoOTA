@@ -182,72 +182,79 @@ async def log_handling():
 
 
 
-async def serve_client(reader, writer):
-    
-    
+async def serve_client( reader, writer):
+    global cmdOTA, cmdReboot, homingneeded
     try:
-        #gc.collect()
-        
         print("Client connected")
         request_line = await reader.readline()
-        request_path = request_line.split()[1].decode()
         print("Request:", request_line)
-        
-        # We are not interested in HTTP request headers, skip them
+
+        # Clear remaining HTTP request headers
         while await reader.readline() != b"\r\n":
             pass
 
-        version = f"MicroPython Version: {sys.version}"
-        
+        # Parse request target string
+        request_str = request_line.decode('utf-8')
+        request_path = request_str.split()[1] if len(request_str.split()) > 1 else '/'
+
+        heading = "Append '/log' or '/err' to URL to see log file or error log"
+        data = ""
+
+        # Router conditions
         if '/trigger_ota' in request_path:
-            cmdOTA = True  # Sets global flag for the main loop
-            heading = "OTA Update Triggered Successfully!"
-            data = "Pico is updating and will reboot..."
-            print('OTA update initiated via Web Interface')
-        
-        if '/log' in request_line.split()[1]:
+            cmdOTA = True
+            heading = "System Update Action Launched!"
+            data = "The module is seeking firmware updates online and will restart shortly..."
+            print('Web Action: OTA Triggered')
+            
+        elif '/trigger_reboot' in request_path:
+            cmdReboot = True
+            heading = "System Reboot Requested!"
+            data = "The Pico hardware is performing a hard reset sequence..."
+            print('Web Action: Reboot Triggered')
+            
+        elif '/trigger_homing' in request_path:
+            homingneeded = True  # Breaks the main loop to invoke homing()
+            heading = "Homing Sequence Force Triggered!"
+            data = "The stepper is executing calibration towards the limit switch array..."
+            print('Web Action: Homing Triggered')
+
+        elif '/log' in request_path:
             with open(LOGFILENAME) as file:
                 data = file.read()
-            heading = "Debug"
-            print('log demanded')
-        elif '/log1' in request_line.split()[1]:
+            heading = "Debug Log"
+        elif '/log1' in request_path:
             with open(LOGFILENAME1) as file:
                 data = file.read()
-            heading = "Debug1"
-            print('log1 demanded')
-        elif '/log2' in request_line.split()[1]:
+            heading = "Debug1 Log"
+        elif '/log2' in request_path:
             with open(LOGFILENAME2) as file:
                 data = file.read()
-            heading = "Debug2"
-            print('log2 demanded')
-        elif '/log3' in request_line.split()[1]:
+            heading = "Debug2 Log"
+        elif '/log3' in request_path:
             with open(LOGFILENAME3) as file:
                 data = file.read()
-            heading = "Debug3"
-            print('log3 demanded')
-        elif '/err' in request_line.split()[1]:
+            heading = "Debug3 Log"
+        elif '/err' in request_path:
             with open(ERRORLOGFILENAME) as file:
                 data = file.read()
-            heading = "ERRORS"
+            heading = "System Errors Log"
         else:
             with open(DATAFILENAME) as file:
                 data = file.read()
-            heading = "Append '/log' or '/err' to URL to see log file or error log"
 
         data += gc_text
-
+        version = f"MicroPython Version: {sys.version}"
         response = html % (heading, version, data)
+        
         writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
         writer.write(response)
-
         await writer.drain()
         await writer.wait_closed()
         print("Client disconnected")
         await asyncio.sleep_ms(0)
-        
     except Exception as e:
         with open(ERRORLOGFILENAME, 'a') as file:
-            
             file.write(f"serve_client error @ {timestamp}: {str(e)}\n")
 
 def record(line):
