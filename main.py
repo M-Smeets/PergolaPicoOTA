@@ -63,6 +63,7 @@ oldval = 0
 connected = False
 cmdReboot = False
 cmdOTA = False
+target_pos = 0
 
 # Raw HTML Headers
 HTML_START_RAIN = """<!DOCTYPE html><html><head><title>Pergola controller with rain sensor</title><meta http-equiv="refresh" content="15"></head><body style="font-family:sans-serif; padding:15px;"><h1>Pergola shading control with rain sensor</h1>"""
@@ -77,41 +78,26 @@ BUTTONS_HTML = """
 </div>
 """
 
-HTML_END = """<pre>%s</pre></body></html>"""
-
-
 if 'rain' in CLIENT_ID:
-    html_template = """<!DOCTYPE html>
+    html = """<!DOCTYPE html>
 <html>
 <head>
     <title>Pergola controller with rain sensor</title>
     <meta http-equiv="refresh" content="15">
 </head>
-<body>
+<body style="font-family:sans-serif; padding:15px;">
     <h1>Pergola shading control with rain sensor</h1>
-    """ + DASHBOARD_HTML + """
-    <h3>{heading}</h3>
-    <h4>{version}</h4>
-    <pre>{data}</pre>
-</body>
-</html>
-"""
+""" + BUTTONS_HTML
 else:
-    html_template = """<!DOCTYPE html>
+    html = """<!DOCTYPE html>
 <html>
 <head>
     <title>Pergola controller</title>
     <meta http-equiv="refresh" content="15">
 </head>
-<body>
+<body style="font-family:sans-serif; padding:15px;">
     <h1>Pergola shading control</h1>
-    """ + DASHBOARD_HTML + """
-    <h3>{heading}</h3>
-    <h4>{version}</h4>
-    <pre>{data}</pre>
-</body>
-</html>
-"""
+""" + BUTTONS_HTML
 
 
 async def log_handling():
@@ -334,7 +320,7 @@ async def get_rssi():
             
             break
         
-    except IndexError:  # ssid not found.
+    except IndexError as e:  # ssid not found.
         rssi = -199
         with open(ERRORLOGFILENAME, 'a') as file:
             file.write(f"ssid not found: {str(e)}\n")
@@ -686,7 +672,7 @@ elif not 'rain' in CLIENT_ID:
 config['keepalive'] = 120
 
 # Set up client
-MQTTClient.DEBUG = False  # Optional
+MQTTClient.DEBUG = True  # Optional
 client = MQTTClient(config)
     
 asyncio.create_task(heartbeat())
@@ -697,4 +683,5 @@ try:
 finally:
     client.close()  # Prevent LmacRxBlk:1 errors
     asyncio.new_event_loop()
+
 
