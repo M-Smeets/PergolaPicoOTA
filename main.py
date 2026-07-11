@@ -64,55 +64,69 @@ connected = False
 cmdReboot = False
 cmdOTA = False
 
-# Updated HTML with embedded CSS for status tiles
-BUTTONS_HTML = """
+# Shared button and dashboard layout
+DASHBOARD_HTML = """
 <div style="display: flex; gap: 15px; margin: 20px 0;">
-    <form action="/trigger_homing" method="POST" style="margin: 0;"><button type="submit" style="padding: 12px 24px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button></form>
+    <form action="/trigger_ota" method="POST" style="margin: 0;">
+        <button type="submit" style="padding: 12px 24px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button>
+    </form>
+    <form action="/trigger_reboot" method="POST" style="margin: 0;">
+        <button type="submit" style="padding: 12px 24px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button>
+    </form>
+    <form action="/trigger_homing" method="POST" style="margin: 0;">
+        <button type="submit" style="padding: 12px 24px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button>
+    </form>
 </div>
 
-<!-- Real-time Position Dashboard -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; font-family: sans-serif;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; font-family: sans-serif;">
     <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #008CBA; border-radius: 4px;">
-        <div style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold;">Target</div>
-        <div style="font-size: 24px; font-weight: bold; color: #222;">%s <span style="font-size: 14px;">steps</span></div>
+        <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Target Position</div>
+        <div style="font-size: 22px; font-weight: bold; color: #222;">{target_pos} <span style="font-size: 13px; color:#666;">steps</span></div>
     </div>
     <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #4CAF50; border-radius: 4px;">
-        <div style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold;">Actual</div>
-        <div style="font-size: 24px; font-weight: bold; color: #222;">%s <span style="font-size: 14px;">steps</span></div>
+        <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Actual Position</div>
+        <div style="font-size: 22px; font-weight: bold; color: #222;">{act_pos} <span style="font-size: 13px; color:#666;">steps</span></div>
     </div>
     <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #ff9800; border-radius: 4px;">
-        <div style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold;">Angle</div>
-        <div style="font-size: 24px; font-weight: bold; color: #222;">%s&deg;</div>
+        <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Louver Angle</div>
+        <div style="font-size: 22px; font-weight: bold; color: #222;">{angle}&deg;</div>
     </div>
 </div>
 """
-# Integrate BUTTONS_HTML into existing HTML strings (use %%s for nested placeholders)
-
 
 if 'rain' in CLIENT_ID:
-    html = """<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html>
-<head> <title>Pergola controller with rain sensor</title> </head>
-<body> <h1>Pergola shading control with rain sensor</h1>
-""" + BUTTONS_HTML + """
-<h3>%s</h3>
-<h4>%s</h4>
-<pre>%s</pre>
+<head>
+    <title>Pergola controller with rain sensor</title>
+    <meta http-equiv="refresh" content="15">
+</head>
+<body>
+    <h1>Pergola shading control with rain sensor</h1>
+    """ + DASHBOARD_HTML + """
+    <h3>{heading}</h3>
+    <h4>{version}</h4>
+    <pre>{data}</pre>
 </body>
 </html>
 """
 else:
-    html = """<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html>
-<head> <title>Pergola controller</title> </head>
-<body> <h1>Pergola shading control</h1>
-""" + BUTTONS_HTML + """
-<h3>%s</h3>
-<h4>%s</h4>
-<pre>%s</pre>
+<head>
+    <title>Pergola controller</title>
+    <meta http-equiv="refresh" content="15">
+</head>
+<body>
+    <h1>Pergola shading control</h1>
+    """ + DASHBOARD_HTML + """
+    <h3>{heading}</h3>
+    <h4>{version}</h4>
+    <pre>{data}</pre>
 </body>
 </html>
 """
+
 
 async def log_handling():
     
@@ -192,8 +206,8 @@ async def log_handling():
 
 
 
-async def serve_client( reader, writer):
-    global cmdOTA, cmdReboot, homingneeded
+async def serve_client(reader, writer):
+    global cmdOTA, cmdReboot, homingneeded, target_pos
     try:
         print("Client connected")
         request_line = await reader.readline()
@@ -210,7 +224,7 @@ async def serve_client( reader, writer):
         heading = "Append '/log' or '/err' to URL to see log file or error log"
         data = ""
 
-        # Router conditions
+        # Route matches
         if '/trigger_ota' in request_path:
             cmdOTA = True
             heading = "System Update Action Launched!"
@@ -224,54 +238,64 @@ async def serve_client( reader, writer):
             print('Web Action: Reboot Triggered')
             
         elif '/trigger_homing' in request_path:
-            homingneeded = True  # Breaks the main loop to invoke homing()
+            homingneeded = True
             heading = "Homing Sequence Force Triggered!"
             data = "The stepper is executing calibration towards the limit switch array..."
             print('Web Action: Homing Triggered')
 
         elif '/log' in request_path:
-            with open(LOGFILENAME) as file:
-                data = file.read()
+            with open(LOGFILENAME) as file: data = file.read()
             heading = "Debug Log"
         elif '/log1' in request_path:
-            with open(LOGFILENAME1) as file:
-                data = file.read()
+            with open(LOGFILENAME1) as file: data = file.read()
             heading = "Debug1 Log"
         elif '/log2' in request_path:
-            with open(LOGFILENAME2) as file:
-                data = file.read()
+            with open(LOGFILENAME2) as file: data = file.read()
             heading = "Debug2 Log"
         elif '/log3' in request_path:
-            with open(LOGFILENAME3) as file:
-                data = file.read()
+            with open(LOGFILENAME3) as file: data = file.read()
             heading = "Debug3 Log"
         elif '/err' in request_path:
-            with open(ERRORLOGFILENAME) as file:
-                data = file.read()
+            with open(ERRORLOGFILENAME) as file: data = file.read()
             heading = "System Errors Log"
         else:
-            with open(DATAFILENAME) as file:
-                data = file.read()
+            with open(DATAFILENAME) as file: data = file.read()
 
         data += gc_text
         version = f"MicroPython Version: {sys.version}"
-                # Calculate angular telemetry
-        act_pos = s1.get_pos()
+        
+        # Safely pull actual position from the stepper driver instance 's1'
+        try:
+            act_pos = s1.get_pos()
+        except:
+            act_pos = 0
+            
+        # Calculate matching real-world angles (4500 steps = 135 degrees)
         louver_deg = round((act_pos / 4500) * 135, 1) if act_pos > 0 else 0.0
 
-        # Inject new position values along with existing data
-        response = html % (str(target_pos), str(act_pos), str(louver_deg), heading, version, data)
+        # Build response string safely using modern key-value dictionary mapping
+        response = html_template.format(
+            target_pos=str(target_pos),
+            act_pos=str(act_pos),
+            angle=str(louver_deg),
+            heading=heading,
+            version=version,
+            data=data
+        )
         
         writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
         writer.write(response)
-
         await writer.drain()
         await writer.wait_closed()
-        print("Client disconnected")
+        print("Client disconnected cleanly")
         await asyncio.sleep_ms(0)
     except Exception as e:
-        with open(ERRORLOGFILENAME, 'a') as file:
-            file.write(f"serve_client error @ {timestamp}: {str(e)}\n")
+        print("Web server loop crash error:", str(e))
+        try:
+            with open(ERRORLOGFILENAME, 'a') as file:
+                file.write(f"serve_client crash: {str(e)}\n")
+        except:
+            pass
 
 def record(line):
     #gc.collect()
