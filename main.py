@@ -64,20 +64,30 @@ connected = False
 cmdReboot = False
 cmdOTA = False
 
-# Shared button group markup
+# Updated HTML with embedded CSS for status tiles
 BUTTONS_HTML = """
 <div style="display: flex; gap: 15px; margin: 20px 0;">
-    <form action="/trigger_ota" method="POST" style="margin: 0;">
-        <button type="submit" style="padding: 12px 24px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button>
-    </form>
-    <form action="/trigger_reboot" method="POST" style="margin: 0;">
-        <button type="submit" style="padding: 12px 24px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button>
-    </form>
-    <form action="/trigger_homing" method="POST" style="margin: 0;">
-        <button type="submit" style="padding: 12px 24px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button>
-    </form>
+    <form action="/trigger_homing" method="POST" style="margin: 0;"><button type="submit" style="padding: 12px 24px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button></form>
+</div>
+
+<!-- Real-time Position Dashboard -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; font-family: sans-serif;">
+    <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #008CBA; border-radius: 4px;">
+        <div style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold;">Target</div>
+        <div style="font-size: 24px; font-weight: bold; color: #222;">%s <span style="font-size: 14px;">steps</span></div>
+    </div>
+    <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #4CAF50; border-radius: 4px;">
+        <div style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold;">Actual</div>
+        <div style="font-size: 24px; font-weight: bold; color: #222;">%s <span style="font-size: 14px;">steps</span></div>
+    </div>
+    <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #ff9800; border-radius: 4px;">
+        <div style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: bold;">Angle</div>
+        <div style="font-size: 24px; font-weight: bold; color: #222;">%s&deg;</div>
+    </div>
 </div>
 """
+# Integrate BUTTONS_HTML into existing HTML strings (use %%s for nested placeholders)
+
 
 if 'rain' in CLIENT_ID:
     html = """<!DOCTYPE html>
@@ -245,10 +255,16 @@ async def serve_client( reader, writer):
 
         data += gc_text
         version = f"MicroPython Version: {sys.version}"
-        response = html % (heading, version, data)
+                # Calculate angular telemetry
+        act_pos = s1.get_pos()
+        louver_deg = round((act_pos / 4500) * 135, 1) if act_pos > 0 else 0.0
+
+        # Inject new position values along with existing data
+        response = html % (str(target_pos), str(act_pos), str(louver_deg), heading, version, data)
         
         writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
         writer.write(response)
+
         await writer.drain()
         await writer.wait_closed()
         print("Client disconnected")
@@ -560,6 +576,12 @@ async def motion():
              
         elif cmdOTA:
             await runOTA()
+        elif cmdReboot:
+            await reboot()
+        elif homingneeded:  # <--- ADD THIS INTERCEPT BLOCK
+            dprint("Breaking motion loop to execute web-triggered homing cycle.")
+            break
+
     
         
         # Crash detection
