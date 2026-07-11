@@ -71,12 +71,14 @@ class Stepper:
         if d>0:
             if self.enabled:
                 self.dir_value_func(1^self.invert_dir)
+                time.sleep_us(5)
                 self.step_value_func(1)
                 self.step_value_func(0)
             self.pos+=1
         elif d<0:
             if self.enabled:
                 self.dir_value_func(0^self.invert_dir)
+                time.sleep_us(5)
                 self.step_value_func(1)
                 self.step_value_func(0)
             self.pos-=1
