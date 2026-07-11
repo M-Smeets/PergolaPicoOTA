@@ -64,35 +64,21 @@ connected = False
 cmdReboot = False
 cmdOTA = False
 
-# Shared button and dashboard layout
-DASHBOARD_HTML = """
-<div style="display: flex; gap: 15px; margin: 20px 0;">
-    <form action="/trigger_ota" method="POST" style="margin: 0;">
-        <button type="submit" style="padding: 12px 24px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button>
-    </form>
-    <form action="/trigger_reboot" method="POST" style="margin: 0;">
-        <button type="submit" style="padding: 12px 24px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button>
-    </form>
-    <form action="/trigger_homing" method="POST" style="margin: 0;">
-        <button type="submit" style="padding: 12px 24px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button>
-    </form>
-</div>
+# Raw HTML Headers
+HTML_START_RAIN = """<!DOCTYPE html><html><head><title>Pergola controller with rain sensor</title><meta http-equiv="refresh" content="15"></head><body style="font-family:sans-serif; padding:15px;"><h1>Pergola shading control with rain sensor</h1>"""
+HTML_START_NORMAL = """<!DOCTYPE html><html><head><title>Pergola controller</title><meta http-equiv="refresh" content="15"></head><body style="font-family:sans-serif; padding:15px;"><h1>Pergola shading control</h1>"""
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; font-family: sans-serif;">
-    <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #008CBA; border-radius: 4px;">
-        <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Target Position</div>
-        <div style="font-size: 22px; font-weight: bold; color: #222;">{target_pos} <span style="font-size: 13px; color:#666;">steps</span></div>
-    </div>
-    <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #4CAF50; border-radius: 4px;">
-        <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Actual Position</div>
-        <div style="font-size: 22px; font-weight: bold; color: #222;">{act_pos} <span style="font-size: 13px; color:#666;">steps</span></div>
-    </div>
-    <div style="background: #f4f4f9; padding: 15px; border-left: 5px solid #ff9800; border-radius: 4px;">
-        <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Louver Angle</div>
-        <div style="font-size: 22px; font-weight: bold; color: #222;">{angle}&deg;</div>
-    </div>
+# Standard Control Buttons
+BUTTONS_HTML = """
+<div style="display: flex; gap: 10px; margin: 15px 0;">
+    <form action="/trigger_ota" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button></form>
+    <form action="/trigger_reboot" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button></form>
+    <form action="/trigger_homing" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button></form>
 </div>
 """
+
+HTML_END = """<pre>%s</pre></body></html>"""
+
 
 if 'rain' in CLIENT_ID:
     html_template = """<!DOCTYPE html>
@@ -211,11 +197,14 @@ async def serve_client(reader, writer):
     try:
         print("Client connected")
         request_line = await reader.readline()
-        print("Request:", request_line)
+        if not request_line:
+            return
 
         # Clear remaining HTTP request headers
-        while await reader.readline() != b"\r\n":
-            pass
+        while True:
+            line = await reader.readline()
+            if line == b"\r\n" or line == b"":
+                break
 
         # Parse request target string
         request_str = request_line.decode('utf-8')
@@ -224,25 +213,19 @@ async def serve_client(reader, writer):
         heading = "Append '/log' or '/err' to URL to see log file or error log"
         data = ""
 
-        # Route matches
+        # Router conditions
         if '/trigger_ota' in request_path:
             cmdOTA = True
             heading = "System Update Action Launched!"
-            data = "The module is seeking firmware updates online and will restart shortly..."
-            print('Web Action: OTA Triggered')
-            
+            data = "The module is seeking firmware updates online and will restart shortly...\n"
         elif '/trigger_reboot' in request_path:
             cmdReboot = True
             heading = "System Reboot Requested!"
-            data = "The Pico hardware is performing a hard reset sequence..."
-            print('Web Action: Reboot Triggered')
-            
+            data = "The Pico hardware is performing a hard reset sequence...\n"
         elif '/trigger_homing' in request_path:
             homingneeded = True
             heading = "Homing Sequence Force Triggered!"
-            data = "The stepper is executing calibration towards the limit switch array..."
-            print('Web Action: Homing Triggered')
-
+            data = "The stepper is executing calibration towards the limit switch array...\n"
         elif '/log' in request_path:
             with open(LOGFILENAME) as file: data = file.read()
             heading = "Debug Log"
@@ -264,38 +247,46 @@ async def serve_client(reader, writer):
         data += gc_text
         version = f"MicroPython Version: {sys.version}"
         
-        # Safely pull actual position from the stepper driver instance 's1'
+        # Safely extract position variables
         try:
             act_pos = s1.get_pos()
-        except:
+        except Exception:
             act_pos = 0
             
-        # Calculate matching real-world angles (4500 steps = 135 degrees)
         louver_deg = round((act_pos / 4500) * 135, 1) if act_pos > 0 else 0.0
 
-        # Build response string safely using modern key-value dictionary mapping
-        response = html_template.format(
-            target_pos=str(target_pos),
-            act_pos=str(act_pos),
-            angle=str(louver_deg),
-            heading=heading,
-            version=version,
-            data=data
-        )
-        
+        # Construct dashboard segment cleanly using direct concatenation
+        status_dashboard = '<div style="margin: 15px 0; padding: 10px; background: #eee; border-radius: 4px; font-weight: bold;">'
+        status_dashboard += f"Target Position: {target_pos} steps | "
+        status_dashboard += f"Actual Position: {act_pos} steps | "
+        status_dashboard += f"Louver Angle: {louver_deg}&deg;"
+        status_dashboard += '</div>'
+
+        # Assemble full body transmission 
+        if 'rain' in CLIENT_ID:
+            response_body = HTML_START_RAIN + BUTTONS_HTML + status_dashboard
+        else:
+            response_body = HTML_START_NORMAL + BUTTONS_HTML + status_dashboard
+            
+        response_body += f"<h3>{heading}</h3><h4>{version}</h4>"
+        response_body += HTML_END % data
+
+        # Send response header and body cleanly
         writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
-        writer.write(response)
+        writer.write(response_body)
         await writer.drain()
         await writer.wait_closed()
         print("Client disconnected cleanly")
         await asyncio.sleep_ms(0)
+        
     except Exception as e:
-        print("Web server loop crash error:", str(e))
+        print("Web server error caught:", str(e))
         try:
             with open(ERRORLOGFILENAME, 'a') as file:
                 file.write(f"serve_client crash: {str(e)}\n")
         except:
             pass
+
 
 def record(line):
     #gc.collect()
