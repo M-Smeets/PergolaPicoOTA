@@ -563,7 +563,7 @@ async def OTA():
     # Check for OTA updates
     repo_name = "PergolaPicoOTA"
     branch = "refs/heads/main"
-    firmware_url = f"https://github.com/MartiMan79/{repo_name}/{branch}/"
+    firmware_url = f"https://github.com/M-Smeets/{repo_name}/{branch}/"
     ota_updater = OTAUpdater(firmware_url,
                              "main.py",
                              "ota.py",
