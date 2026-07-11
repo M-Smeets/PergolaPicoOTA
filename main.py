@@ -73,7 +73,12 @@ if 'rain' in CLIENT_ID:
         <body> <h1>Pergola shading control with rain sensor</h1>
             <h3>%s</h3>
             <h4>%s</h4>
-            <pre>%s</pre>
+            <pre>%s
+                <form action="/trigger_ota" method="POST">
+                    <button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; cursor: pointer; font-size: 16px;">Trigger OTA Update</button>
+                </form>
+                <br>
+            </pre>
         </body>
     </html>
     """
@@ -86,7 +91,12 @@ elif not 'rain' in CLIENT_ID:
         <body> <h1>Pergola shading control</h1>
             <h3>%s</h3>
             <h4>%s</h4>
-            <pre>%s</pre>
+            <pre>%s
+                <form action="/trigger_ota" method="POST">
+                    <button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; cursor: pointer; font-size: 16px;">Trigger OTA Update</button>
+                </form>
+                <br>
+            </pre>
         </body>
     </html>
     """
