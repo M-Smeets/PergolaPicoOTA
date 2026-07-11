@@ -3,7 +3,7 @@ import math
 import time
 
 class Stepper:
-    def __init__(self,step_pin,dir_pin,en_pin=None,steps_per_rev=200,speed_sps=10,invert_dir=True,timer_id=-1):
+    def __init__(self, step_pin, dir_pin, en_pin=None, steps_per_rev=200, speed_sps=10, invert_dir=False, invert_enable=False, timer_id=-1):
         
         if not isinstance(step_pin, machine.Pin):
             step_pin=machine.Pin(step_pin,machine.Pin.OUT)
@@ -16,6 +16,7 @@ class Stepper:
         self.dir_value_func = dir_pin.value
         self.en_pin = en_pin
         self.invert_dir = invert_dir
+        self.invert_enable = invert_enable
 
         self.timer = machine.Timer(timer_id)
         self.timer_is_running=False
@@ -24,6 +25,7 @@ class Stepper:
         
         self.target_pos = 0
         self.pos = 0
+        self.target_reached = True  # flag used for movement indication
         self.steps_per_sec = speed_sps
         self.steps_per_rev = steps_per_rev
         
@@ -38,13 +40,14 @@ class Stepper:
         self.speed(rps*self.steps_per_rev)
 
     def target(self,t):
+        self.target_reached = False
         self.target_pos = t
 
     def target_deg(self,deg):
-        self.target(self.steps_per_rev*deg/360.0)
+        self.target(round(self.steps_per_rev*deg/360.0))
     
     def target_rad(self,rad):
-        self.target(self.steps_per_rev*rad/(2.0*math.pi))
+        self.target(round(self.steps_per_rev*rad/(2.0*math.pi)))
     
     def get_pos(self):
         return self.pos
@@ -56,7 +59,7 @@ class Stepper:
         return self.get_pos()*(2.0*math.pi)/self.steps_per_rev
     
     def overwrite_pos(self,p):
-        self.pos = 0
+        self.pos = p
     
     def overwrite_pos_deg(self,deg):
         self.overwrite_pos(deg*self.steps_per_rev/360.0)
@@ -87,6 +90,8 @@ class Stepper:
             self.step(1)
         elif self.target_pos<self.pos:
             self.step(-1)
+        else:
+            self.target_reached = True
     
     def free_run(self,d):
         self.free_run_mode=d
@@ -113,11 +118,15 @@ class Stepper:
         self.dir_value_func(0)
 
     def enable(self,e):
+        self.enabled = e
         if self.en_pin:
-            self.en_pin.value(e)
-        self.enabled=e
+            pin_state = bool(e) ^ self.invert_enable
+            self.en_pin.value(pin_state)
         if not e:
             self.dir_value_func(0)
     
     def is_enabled(self):
         return self.enabled
+    
+    def is_target_reached(self):
+        return self.target_reached
