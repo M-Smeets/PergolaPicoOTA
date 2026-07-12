@@ -49,8 +49,8 @@ def localtime(secs: int | None = None) -> tuple[int, int, int, int, int, int, in
 
     utc_secs = mktime(utc)
     if utc_secs >= start_secs and utc_secs < stop_secs:
-        delta_secs = 2 * 60 * 60  # Swedish summer time (CEST or UTC + 2h)
+        delta_secs = 0 * 60 * 60  # Swedish summer time (CEST or UTC + 2h)
     else:
-        delta_secs = 1 * 60 * 60  # Swedish normal time (CET or UTC + 1h)
+        delta_secs = 0 * 60 * 60  # Swedish normal time (CET or UTC + 1h)
 
     return gmtime(utc_secs + delta_secs)
