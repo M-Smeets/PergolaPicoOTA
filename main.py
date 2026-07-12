@@ -53,7 +53,6 @@ ERRORLOGFILENAME = 'errorlog.txt'
 
 # State control variables
 homingneeded = True
-initial_homing_complete = False  
 pos = 0
 setangle = 0
 oldTime = 0
@@ -74,7 +73,6 @@ BUTTONS_HTML = """
 <div style="display: flex; gap: 10px; margin: 15px 0;">
     <form action="/trigger_ota" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button></form>
     <form action="/trigger_reboot" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button></form>
-    <form action="/trigger_homing" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Force Homing</button></form>
 </div>
 """
 
@@ -191,16 +189,7 @@ async def serve_client(reader, writer):
             cmdReboot = True
             heading = "System Reboot Requested!"
             data = "The Pico hardware is performing a hard reset sequence...\n"
-        elif '/trigger_homing' in request_path:
-            # Only allow web re-homing if the system has finished its initialization
-            if initial_homing_complete == True:
-                homingneeded = True
-                heading = "Homing Sequence Force Triggered!"
-                data = "The stepper is executing calibration towards the limit switch array...\n"
-            else:
-                heading = "Command Rejected"
-                data = "Initial startup calibration sequence is currently executing. Please wait.\n"
-
+        
         elif '/log' in request_path:
             with open(LOGFILENAME) as file: data = file.read()
             heading = "Debug Log"
@@ -233,7 +222,7 @@ async def serve_client(reader, writer):
         # Construct dashboard segment cleanly using direct concatenation
         status_dashboard = '<div style="margin: 15px 0; padding: 10px; background: #eee; border-radius: 4px; font-weight: bold;">'
         status_dashboard += f"Actual Position: {act_pos} steps | "
-        status_dashboard += f"Requested Position: {set_angle} steps | "
+        status_dashboard += f"Requested Position: {pos} steps | "
         status_dashboard += f"Louver Angle: {louver_deg}&deg;"
         status_dashboard += '</div>'
 
@@ -294,17 +283,22 @@ async def heartbeat():
 
 async def get_rssi():
     global rssi
+    import network
+    # Reference the active wireless station object directly
+    wlan = network.WLAN(network.STA_IF)
     try:
         while True:
-            # Passively check connection signal strength without running .scan()
-            if connected and hasattr(client, '_wlan'):
+            if wlan.isconnected():
                 try:
-                    rssi = client._wlan.status('rssi')
+                    rssi = wlan.status('rssi')
                 except Exception:
-                    rssi = -199
+                    rssi = -99  # Fallback code for failed reads
+            else:
+                rssi = -199     # Indicates disconnected state
             await asyncio.sleep(30)
     except Exception:
         pass
+
     
     
 async def wifi_han(state):
@@ -329,7 +323,7 @@ async def get_ntp():
            
             settime()
             rtc = machine.RTC()
-            utc_shift = 0
+            utc_shift = 2
 
             tm = time.localtime(time.mktime(time.localtime()) + utc_shift*3600)
             tm = tm[0:3] + (0,) + tm[3:6] + (0,)
@@ -443,7 +437,7 @@ async def runOTA():
 async def homing():
     
     global homingneeded
-    global initial_homing_complete
+
     #gc.collect()
 
     while True:
@@ -517,7 +511,7 @@ async def homing():
             s1.track_target() #start stepper again
             s1.en_pin(1)
             await client.publish(PUBLISH_TOPIC1, f"Homing successful", qos=1)
-            initial_homing_complete = True  # <--- LOCK out early web server interference
+
             dprint("Homing successful")
             
         if alarm():
@@ -631,7 +625,7 @@ async def main():
         dprint("Booting up")
         await client.connect()
         dprint("client connect finished")
-        #await get_ntp()
+        await get_ntp()
 
     except OSError as e:
         
@@ -648,14 +642,14 @@ async def main():
     dprint("Startup ready")
     
     while True and homingneeded == True:
-        
         await homing()
+        await asyncio.sleep_ms(20)
         
     
     while True:
 
         await motion()
-        
+        await asyncio.sleep_ms(20)
 
 # Define configuration
 config['subs_cb'] = sub_cb
