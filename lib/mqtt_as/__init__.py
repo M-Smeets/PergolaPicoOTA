@@ -828,16 +828,11 @@ class MQTTClient(MQTT_base):
     # handles incoming messages.
     async def _handle_msg(self):
         try:
-            while self.isconnected():
-                async with self.lock:
-                    await self.wait_msg()  # Immediate return if no message
-                # https://github.com/peterhinch/micropython-mqtt/issues/166
-                # A delay > 0 is necessary for webrepl compatibility.
-                await asyncio.sleep_ms(5)  # Let other tasks get lock
-
-        except OSError:
-            pass
-        self._reconnect()  # Broker or WiFi fail.
+            await self.wait_msg()
+        except AssertionError:
+            # Safely catch the empty response error, close the broken pipe, 
+            # and let mqtt_as automatically execute its clean reconnection loop!
+            self._close() 
 
     # Keep broker alive MQTT spec 3.1.2.10 Keep Alive.
     # Runs until ping failure or no response in keepalive period.
