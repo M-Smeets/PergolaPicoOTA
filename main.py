@@ -458,6 +458,7 @@ async def runOTA():
 async def homing():
     
     global homingneeded
+    global initial_homing_complete
     #gc.collect()
 
     while True:
