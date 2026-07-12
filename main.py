@@ -213,7 +213,7 @@ async def serve_client(reader, writer):
             data = "The Pico hardware is performing a hard reset sequence...\n"
         elif '/trigger_homing' in request_path:
             # Only allow web re-homing if the system has finished its initialization
-            if initial_homing_complete:
+            if initial_homing_complete == True:
                 homingneeded = True
                 heading = "Homing Sequence Force Triggered!"
                 data = "The stepper is executing calibration towards the limit switch array...\n"
