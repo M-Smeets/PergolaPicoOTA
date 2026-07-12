@@ -53,12 +53,12 @@ ERRORLOGFILENAME = 'errorlog.txt'
 
 # State control variables
 homingneeded = True
-initial_homing_complete = False  # <--- ADD THIS LINE
+initial_homing_complete = False  
 pos = 0
 setangle = 0
 oldTime = 0
 currentTime = 0
-rssi = -199  # Effectively zero signal in dB.
+rssi = -199 
 raining = False
 oldval = 0
 connected = False
@@ -315,7 +315,7 @@ async def get_rssi():
     global rssi
     try:
         while True:
-            # Passively grab rssi from the existing connection
+            # Passively check connection signal strength without running .scan()
             if connected and hasattr(client, '_wlan'):
                 try:
                     rssi = client._wlan.status('rssi')
@@ -324,6 +324,7 @@ async def get_rssi():
             await asyncio.sleep(30)
     except Exception:
         pass
+    
     
 async def wifi_han(state):
     global connected
