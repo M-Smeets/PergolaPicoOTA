@@ -51,8 +51,9 @@ LOGFILENAME2 = 'debug.log.2'
 LOGFILENAME3 = 'debug.log.3'
 ERRORLOGFILENAME = 'errorlog.txt'
 
-# Variables
+# State control variables
 homingneeded = True
+initial_homing_complete = False  # <--- ADD THIS LINE
 pos = 0
 setangle = 0
 oldTime = 0
@@ -63,7 +64,6 @@ oldval = 0
 connected = False
 cmdReboot = False
 cmdOTA = False
-target_pos = 0
 
 # Raw HTML Headers
 HTML_START_RAIN = """<!DOCTYPE html><html><head><title>Pergola controller with rain sensor</title><meta http-equiv="refresh" content="15"></head><body style="font-family:sans-serif; padding:15px;"><h1>Pergola shading control with rain sensor</h1>"""
@@ -182,7 +182,7 @@ async def log_handling():
 
 
 async def serve_client(reader, writer):
-    global cmdOTA, cmdReboot, homingneeded, target_pos
+    global cmdOTA, cmdReboot, homingneeded
     try:
         print("Client connected")
         request_line = await reader.readline()
@@ -202,19 +202,25 @@ async def serve_client(reader, writer):
         heading = "Append '/log' or '/err' to URL to see log file or error log"
         data = ""
 
-        # Router conditions
+                # Router conditions
         if '/trigger_ota' in request_path:
             cmdOTA = True
             heading = "System Update Action Launched!"
-            data = "The module is seeking firmware updates online and will restart shortly...\n"
+            data = "The module is seeking firmware updates online..."
         elif '/trigger_reboot' in request_path:
             cmdReboot = True
             heading = "System Reboot Requested!"
             data = "The Pico hardware is performing a hard reset sequence...\n"
         elif '/trigger_homing' in request_path:
-            homingneeded = True
-            heading = "Homing Sequence Force Triggered!"
-            data = "The stepper is executing calibration towards the limit switch array...\n"
+            # Only allow web re-homing if the system has finished its initialization
+            if initial_homing_complete:
+                homingneeded = True
+                heading = "Homing Sequence Force Triggered!"
+                data = "The stepper is executing calibration towards the limit switch array...\n"
+            else:
+                heading = "Command Rejected"
+                data = "Initial startup calibration sequence is currently executing. Please wait.\n"
+
         elif '/log' in request_path:
             with open(LOGFILENAME) as file: data = file.read()
             heading = "Debug Log"
@@ -246,7 +252,6 @@ async def serve_client(reader, writer):
 
         # Construct dashboard segment cleanly using direct concatenation
         status_dashboard = '<div style="margin: 15px 0; padding: 10px; background: #eee; border-radius: 4px; font-weight: bold;">'
-        status_dashboard += f"Target Position: {target_pos} steps | "
         status_dashboard += f"Actual Position: {act_pos} steps | "
         status_dashboard += f"Louver Angle: {louver_deg}&deg;"
         status_dashboard += '</div>'
@@ -298,24 +303,11 @@ async def heartbeat():
         LED(s)
         s = not s
 
-async def wifi_han(state):
-    global connected
-    s = "rssi: {}dB"
-    LED(not state)
-    if state:
-        connected = True
-        dprint('Wifi is up')
-        dprint(s.format(rssi))
-    else:
-        dprint('Wifi is down')
-        connected = False
-    await asyncio.sleep_ms(0)
-
 async def get_rssi():
     global rssi
     s = network.WLAN()
     ssid = config["ssid"].encode("UTF8")
-    #while True:
+    
     try:
         while True:
             
@@ -329,20 +321,35 @@ async def get_rssi():
             file.write(f"ssid not found: {str(e)}\n")
             
     await asyncio.sleep(30)
+    
+async def wifi_han(state):
+    global connected
+    s = "rssi: {}dB"
+    LED(not state)
+    if state:
+        connected = True
+        dprint('Wifi is up')
+        dprint(s.format(rssi))
+    else:
+        dprint('Wifi is down')
+        connected = False
+    await asyncio.sleep_ms(0)
 
 async def get_ntp():
-    #gc.collect()
+    gc.collect()
     
     try:
+        while True:
             
-        settime()
-        rtc = machine.RTC()
-        utc_shift = 1
+           
+            settime()
+            rtc = machine.RTC()
+            utc_shift = 0
 
-        tm = time.localtime(time.mktime(time.localtime()) + utc_shift*3600)
-        tm = tm[0:3] + (0,) + tm[3:6] + (0,)
-        rtc.datetime(tm)
-        await asyncio.sleep_ms(0)
+            tm = time.localtime(time.mktime(time.localtime()) + utc_shift*3600)
+            tm = tm[0:3] + (0,) + tm[3:6] + (0,)
+            rtc.datetime(tm)
+            await asyncio.sleep_ms(0)
         
     except OSError as e:
         with open(ERRORLOGFILENAME, 'a') as file:
@@ -371,7 +378,7 @@ def sub_cb(topic, msg, retained):
     
     if topic.decode() == SUBSCRIBE_TOPIC1:
                 
-        if not 0 <= int(msg.decode()) <= 288000:
+        if not 0 <= int(msg.decode()) <= 4500:
             #dprint(str(msg.decode() + " is no INT"))
             setangle = 0
         else:
@@ -523,6 +530,7 @@ async def homing():
             s1.track_target() #start stepper again
             s1.en_pin(1)
             await client.publish(PUBLISH_TOPIC1, f"Homing successful", qos=1)
+            initial_homing_complete = True  # <--- LOCK out early web server interference
             dprint("Homing successful")
             
         if alarm():
@@ -634,10 +642,12 @@ async def OTA():
 async def main():
 
     try:
+        dprint("Booting up")
         await client.connect()
+        dprint("client connect finished")
         await get_ntp()
 
-    except OSError:
+    except OSError as e:
         
         with open(ERRORLOGFILENAME, 'a') as file:
             file.write(f"Connection failed: {str(e)}\n")
