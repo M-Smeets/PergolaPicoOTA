@@ -487,7 +487,8 @@ async def homing():
             s1.free_run(-1) #move backwards
             s1.en_pin(0)
             while endswitch1.value() == 0 and not alarm(): #wait till the switch is triggered
-                pass
+                await asyncio.sleep_ms(10)
+                
         
             s1.stop() #stop as soon as the switch is triggered
             s1.overwrite_pos(0) #set position as 0 point
@@ -506,7 +507,7 @@ async def homing():
                     await client.publish(PUBLISH_TOPIC1, f"Homing failed!", qos=1)
                     await asyncio.sleep(5)
                     machine.soft_reset()
-                pass
+                await asyncio.sleep_ms(10)
         
             await asyncio.sleep(0.1)        
             s1.stop() #stop as soon as the switch is triggered
