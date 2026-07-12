@@ -264,6 +264,27 @@ async def serve_client(reader, writer):
             
         response_body += f"<h3>{heading}</h3><h4>{version}</h4>"
         response_body += HTML_END % data
+                # ... (Keep all your existing routing logic if/elif blocks up to here)
+
+        # CHECK IF A ACTION WAS TRIGGERED TO REDIRECT THE BROWSER
+        is_action = '/trigger_ota' in request_path or '/trigger_reboot' in request_path or '/trigger_homing' in request_path
+
+        if is_action:
+            # Send an HTTP 303 Redirect to clean the URL bar instantly
+            writer.write('HTTP/1.1 303 See Other\r\n')
+            writer.write('Location: /\r\n')
+            writer.write('Content-Length: 0\r\n\r\n')
+            await writer.drain()
+            await writer.wait_closed()
+            dprint("Action executed, browser redirected cleanly to root URL")
+            return # Exit function early since we already closed the socket
+
+        # Otherwise, send the normal dashboard page for standard requests (/ , /log, etc.)
+        writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+        writer.write(response_body)
+        await writer.drain()
+        await writer.wait_closed()
+        dprint("Client disconnected cleanly")
 
         # Send response header and body cleanly
         writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
@@ -593,8 +614,8 @@ async def motion():
             await reboot()
         elif homingneeded:  # <--- ADD THIS INTERCEPT BLOCK
             dprint("Breaking motion loop to execute web-triggered homing cycle.")
+            await homing()
             break
-
     
         
         # Crash detection
