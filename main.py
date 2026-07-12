@@ -81,26 +81,6 @@ BUTTONS_HTML = """
 # HTML Document Closing Tag Template
 HTML_END = """<pre>%s</pre></body></html>"""
 
-if 'rain' in CLIENT_ID:
-    html = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Pergola controller with rain sensor</title>
-    <meta http-equiv="refresh" content="15">
-</head>
-<body style="font-family:sans-serif; padding:15px;">
-    <h1>Pergola shading control with rain sensor</h1>
-""" + BUTTONS_HTML
-else:
-    html = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Pergola controller</title>
-    <meta http-equiv="refresh" content="15">
-</head>
-<body style="font-family:sans-serif; padding:15px;">
-    <h1>Pergola shading control</h1>
-""" + BUTTONS_HTML
 
 
 async def log_handling():
@@ -612,18 +592,16 @@ async def motion():
         await swap_io()
         await asyncio.sleep_ms(20)
 
-    while True and alarm():
-        
+    if alarm():
         if not oldVal:
-                    
             await client.publish(PUBLISH_TOPIC1, f"DRIVE ALARM", qos=1)
             oldVal = True
-            
         s1.stop()
         s1.en_pin(1)
         dprint("DRIVE ALARM")
         await homing()
-
+        
+        
 async def OTA():
     
     global cmdOTA
