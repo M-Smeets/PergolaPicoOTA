@@ -233,6 +233,7 @@ async def serve_client(reader, writer):
         # Construct dashboard segment cleanly using direct concatenation
         status_dashboard = '<div style="margin: 15px 0; padding: 10px; background: #eee; border-radius: 4px; font-weight: bold;">'
         status_dashboard += f"Actual Position: {act_pos} steps | "
+        status_dashboard += f"Requested Position: {set_angle} steps | "
         status_dashboard += f"Louver Angle: {louver_deg}&deg;"
         status_dashboard += '</div>'
 
