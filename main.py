@@ -51,35 +51,45 @@ LOGFILENAME2 = 'debug.log.2'
 LOGFILENAME3 = 'debug.log.3'
 ERRORLOGFILENAME = 'errorlog.txt'
 
-# State control variables
+# Variables
 homingneeded = True
 pos = 0
 setangle = 0
 oldTime = 0
 currentTime = 0
-rssi = -199 
+rssi = -199  # Effectively zero signal in dB.
 raining = False
 oldval = 0
 connected = False
 cmdReboot = False
 cmdOTA = False
 
-# Raw HTML Headers
-HTML_START_RAIN = """<!DOCTYPE html><html><head><title>Pergola controller with rain sensor</title><meta http-equiv="refresh" content="15"></head><body style="font-family:sans-serif; padding:15px;"><h1>Pergola shading control with rain sensor</h1>"""
-HTML_START_NORMAL = """<!DOCTYPE html><html><head><title>Pergola controller</title><meta http-equiv="refresh" content="15"></head><body style="font-family:sans-serif; padding:15px;"><h1>Pergola shading control</h1>"""
-
-# Standard Control Buttons
-BUTTONS_HTML = """
-<div style="display: flex; gap: 10px; margin: 15px 0;">
-    <form action="/trigger_ota" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">OTA Update</button></form>
-    <form action="/trigger_reboot" method="POST"><button type="submit" style="padding: 10px 20px; background-color: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Reboot</button></form>
-</div>
-"""
-
-# HTML Document Closing Tag Template
-HTML_END = """<pre>%s</pre></body></html>"""
-
-
+# HTML file
+if 'rain' in CLIENT_ID:
+    
+    html = """<!DOCTYPE html>
+    <html>
+        <head> <title>Pergola controller with rain sensor</title> </head>
+        <body> <h1>Pergola shading control with rain sensor</h1>
+            <h3>%s</h3>
+            <h4>%s</h4>
+            <pre>%s</pre>
+        </body>
+    </html>
+    """
+    
+elif not 'rain' in CLIENT_ID:
+    
+    html = """<!DOCTYPE html>
+    <html>
+        <head> <title>Pergola controller</title> </head>
+        <body> <h1>Pergola shading control</h1>
+            <h3>%s</h3>
+            <h4>%s</h4>
+            <pre>%s</pre>
+        </body>
+    </html>
+    """
 
 async def log_handling():
     
@@ -160,105 +170,65 @@ async def log_handling():
 
 
 async def serve_client(reader, writer):
-    global cmdOTA, cmdReboot, homingneeded
+    
+    
     try:
+        #gc.collect()
+        
         print("Client connected")
         request_line = await reader.readline()
-        if not request_line:
-            return
-
-        # Clear remaining HTTP request headers
-        while True:
-            line = await reader.readline()
-            if line == b"\r\n" or line == b"":
-                break
-
-        # Parse request target string
-        request_str = request_line.decode('utf-8')
-        request_path = request_str.split()[1] if len(request_str.split()) > 1 else '/'
-
-        heading = "Append '/log' or '/err' to URL to see log file or error log"
-        data = ""
-
-                # Router conditions
-        if '/trigger_ota' in request_path:
-            cmdOTA = True
-            heading = "System Update Action Launched!"
-            data = "The module is seeking firmware updates online..."
-        elif '/trigger_reboot' in request_path:
-            cmdReboot = True
-            heading = "System Reboot Requested!"
-            data = "The Pico hardware is performing a hard reset sequence...\n"
+        print("Request:", request_line)
         
-        elif '/log' in request_path:
-            with open(LOGFILENAME) as file: data = file.read()
-            heading = "Debug Log"
-        elif '/log1' in request_path:
-            with open(LOGFILENAME1) as file: data = file.read()
-            heading = "Debug1 Log"
-        elif '/log2' in request_path:
-            with open(LOGFILENAME2) as file: data = file.read()
-            heading = "Debug2 Log"
-        elif '/log3' in request_path:
-            with open(LOGFILENAME3) as file: data = file.read()
-            heading = "Debug3 Log"
-        elif '/err' in request_path:
-            with open(ERRORLOGFILENAME) as file: data = file.read()
-            heading = "System Errors Log"
-        else:
-            with open(DATAFILENAME) as file: data = file.read()
-
-        data += gc_text
-        version = f"MicroPython Version: {sys.version}"
-        
-        # Safely extract position variables
-        try:
-            act_pos = s1.get_pos()
-        except Exception:
-            act_pos = 0
-            
-        louver_deg = round((act_pos / 4500) * 135, 1) if act_pos > 0 else 0.0
-
-        # Construct dashboard segment cleanly using direct concatenation
-        status_dashboard = '<div style="margin: 15px 0; padding: 10px; background: #eee; border-radius: 4px; font-weight: bold;">'
-        status_dashboard += f"Actual Position: {act_pos} steps | "
-        status_dashboard += f"Requested Position: {pos} steps | "
-        status_dashboard += f"Louver Angle: {louver_deg}&deg;"
-        status_dashboard += '</div>'
-
-        # Assemble full body transmission 
-        if 'rain' in CLIENT_ID:
-            response_body = HTML_START_RAIN + BUTTONS_HTML + status_dashboard
-        else:
-            response_body = HTML_START_NORMAL + BUTTONS_HTML + status_dashboard
-            
-        response_body += f"<h3>{heading}</h3><h4>{version}</h4>"
-        response_body += HTML_END % data
-                # ... (Keep all your existing routing logic if/elif blocks up to here)
-
-        # CHECK IF A ACTION WAS TRIGGERED TO REDIRECT THE BROWSER
-        is_action = '/trigger_ota' in request_path or '/trigger_reboot' in request_path or '/trigger_homing' in request_path
-
-        if is_action:
-            writer.write('HTTP/1.1 303 See Other\r\n\r\n')
-            await writer.wait_closed()
-            return 
-
-        # Send normal response (200 OK)
-        writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
-        writer.write(response_body)
-        await writer.drain()
-        await writer.wait_closed()
-
-        
-    except Exception as e:
-        print("Web server error caught:", str(e))
-        try:
-            with open(ERRORLOGFILENAME, 'a') as file:
-                file.write(f"serve_client crash: {str(e)}\n")
-        except:
+        # We are not interested in HTTP request headers, skip them
+        while await reader.readline() != b"\r\n":
             pass
 
+        version = f"MicroPython Version: {sys.version}"
+
+        if '/log' in request_line.split()[1]:
+            with open(LOGFILENAME) as file:
+                data = file.read()
+            heading = "Debug"
+            print('log demanded')
+        elif '/log1' in request_line.split()[1]:
+            with open(LOGFILENAME1) as file:
+                data = file.read()
+            heading = "Debug1"
+            print('log1 demanded')
+        elif '/log2' in request_line.split()[1]:
+            with open(LOGFILENAME2) as file:
+                data = file.read()
+            heading = "Debug2"
+            print('log2 demanded')
+        elif '/log3' in request_line.split()[1]:
+            with open(LOGFILENAME3) as file:
+                data = file.read()
+            heading = "Debug3"
+            print('log3 demanded')
+        elif '/err' in request_line.split()[1]:
+            with open(ERRORLOGFILENAME) as file:
+                data = file.read()
+            heading = "ERRORS"
+        else:
+            with open(DATAFILENAME) as file:
+                data = file.read()
+            heading = "Append '/log' or '/err' to URL to see log file or error log"
+
+        data += gc_text
+
+        response = html % (heading, version, data)
+        writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+        writer.write(response)
+
+        await writer.drain()
+        await writer.wait_closed()
+        print("Client disconnected")
+        await asyncio.sleep_ms(0)
+        
+    except Exception as e:
+        with open(ERRORLOGFILENAME, 'a') as file:
+            
+            file.write(f"serve_client error @ {timestamp}: {str(e)}\n")
 
 def record(line):
     #gc.collect()
@@ -281,26 +251,6 @@ async def heartbeat():
         LED(s)
         s = not s
 
-async def get_rssi():
-    global rssi
-    import network
-    # Reference the active wireless station object directly
-    wlan = network.WLAN(network.STA_IF)
-    try:
-        while True:
-            if wlan.isconnected():
-                try:
-                    rssi = wlan.status('rssi')
-                except Exception:
-                    rssi = -99  # Fallback code for failed reads
-            else:
-                rssi = -199     # Indicates disconnected state
-            await asyncio.sleep(30)
-    except Exception:
-        pass
-
-    
-    
 async def wifi_han(state):
     global connected
     s = "rssi: {}dB"
@@ -314,21 +264,38 @@ async def wifi_han(state):
         connected = False
     await asyncio.sleep_ms(0)
 
-async def get_ntp():
-    gc.collect()
-    
+async def get_rssi():
+    global rssi
+    s = network.WLAN()
+    ssid = config["ssid"].encode("UTF8")
+    #while True:
     try:
         while True:
             
-           
-            settime()
-            rtc = machine.RTC()
-            utc_shift = 2
+            rssi = [x[3] for x in s.scan() if x[0] == ssid][0]
+            
+            break
+        
+    except IndexError:  # ssid not found.
+        rssi = -199
+        with open(ERRORLOGFILENAME, 'a') as file:
+            file.write(f"ssid not found: {str(e)}\n")
+            
+    await asyncio.sleep(30)
 
-            tm = time.localtime(time.mktime(time.localtime()) + utc_shift*3600)
-            tm = tm[0:3] + (0,) + tm[3:6] + (0,)
-            rtc.datetime(tm)
-            await asyncio.sleep_ms(0)
+async def get_ntp():
+    #gc.collect()
+    
+    try:
+            
+        settime()
+        rtc = machine.RTC()
+        utc_shift = 1
+
+        tm = time.localtime(time.mktime(time.localtime()) + utc_shift*3600)
+        tm = tm[0:3] + (0,) + tm[3:6] + (0,)
+        rtc.datetime(tm)
+        await asyncio.sleep_ms(0)
         
     except OSError as e:
         with open(ERRORLOGFILENAME, 'a') as file:
@@ -357,7 +324,7 @@ def sub_cb(topic, msg, retained):
     
     if topic.decode() == SUBSCRIBE_TOPIC1:
                 
-        if not 0 <= int(msg.decode()) <= 4500:
+        if not 0 <= int(msg.decode()) <= 288000:
             #dprint(str(msg.decode() + " is no INT"))
             setangle = 0
         else:
@@ -437,7 +404,6 @@ async def runOTA():
 async def homing():
     
     global homingneeded
-
     #gc.collect()
 
     while True:
@@ -481,8 +447,7 @@ async def homing():
             s1.free_run(-1) #move backwards
             s1.en_pin(0)
             while endswitch1.value() == 0 and not alarm(): #wait till the switch is triggered
-                await asyncio.sleep_ms(10)
-                
+                pass
         
             s1.stop() #stop as soon as the switch is triggered
             s1.overwrite_pos(0) #set position as 0 point
@@ -501,7 +466,7 @@ async def homing():
                     await client.publish(PUBLISH_TOPIC1, f"Homing failed!", qos=1)
                     await asyncio.sleep(5)
                     machine.soft_reset()
-                await asyncio.sleep_ms(10)
+                pass
         
             await asyncio.sleep(0.1)        
             s1.stop() #stop as soon as the switch is triggered
@@ -511,7 +476,6 @@ async def homing():
             s1.track_target() #start stepper again
             s1.en_pin(1)
             await client.publish(PUBLISH_TOPIC1, f"Homing successful", qos=1)
-
             dprint("Homing successful")
             
         if alarm():
@@ -526,8 +490,9 @@ async def homing():
 
 # Standard operating sequence
 async def motion():
-    global cmdOTA, cmdReboot, homingneeded, pos # Explicitly declare them global here!
-
+    
+    global cmdOTA
+    global cmdReboot
     oldVal = False
     updatepos = False
     s = "rssi: {}dB"
@@ -538,21 +503,19 @@ async def motion():
         m = gc.mem_free()
         i = 0           
         
-                # UPDATE THIS BLOCK INSIDE YOUR async def motion():
         if s1.get_pos() != pos and not endswitch1():
             s1.en_pin(0)
+            
             await client.publish(PUBLISH_TOPIC1, f"Moving from: " + str(s1.get_pos()) + " to "+ str(pos), qos=1)
+            await asyncio.sleep(0)
+            time.sleep(1)
             
-            # Set the target position ONCE instead of hammering it inside a loop
-            s1.target(pos)
-            
-            # Wait asynchronously until the motor reaches the target position
             while s1.get_pos() != pos and not endswitch1():
-                # This line yields CPU control back to the web server and MQTT loops every millisecond
-                await asyncio.sleep_ms(1)
                 
+                s1.target(pos)
+                pass
+            
             updatepos = True
-
             
         elif s1.get_pos() == pos and not endswitch1() and updatepos:
             s1.en_pin(1)
@@ -570,12 +533,6 @@ async def motion():
              
         elif cmdOTA:
             await runOTA()
-        elif cmdReboot:
-            await reboot()
-        elif homingneeded:  # <--- ADD THIS INTERCEPT BLOCK
-            dprint("Breaking motion loop to execute web-triggered homing cycle.")
-            await homing()
-            break
     
         
         # Crash detection
@@ -586,25 +543,27 @@ async def motion():
             break
         
         await swap_io()
-        await asyncio.sleep_ms(20)
+        await asyncio.sleep_ms(0)
 
-    if alarm():
+    while True and alarm():
+        
         if not oldVal:
+                    
             await client.publish(PUBLISH_TOPIC1, f"DRIVE ALARM", qos=1)
             oldVal = True
+            
         s1.stop()
         s1.en_pin(1)
         dprint("DRIVE ALARM")
         await homing()
-        
-        
+
 async def OTA():
     
     global cmdOTA
     # Check for OTA updates
     repo_name = "PergolaPicoOTA"
     branch = "refs/heads/main"
-    firmware_url = f"https://github.com/M-Smeets/{repo_name}/{branch}/"
+    firmware_url = f"https://github.com/MartiMan79/{repo_name}/{branch}/"
     ota_updater = OTAUpdater(firmware_url,
                              "main.py",
                              "ota.py",
@@ -622,12 +581,10 @@ async def OTA():
 async def main():
 
     try:
-        dprint("Booting up")
         await client.connect()
-        dprint("client connect finished")
         await get_ntp()
 
-    except OSError as e:
+    except OSError:
         
         with open(ERRORLOGFILENAME, 'a') as file:
             file.write(f"Connection failed: {str(e)}\n")
@@ -642,14 +599,14 @@ async def main():
     dprint("Startup ready")
     
     while True and homingneeded == True:
-        await homing()
-        await asyncio.sleep_ms(20)
         
+        await homing()
+        break
     
     while True:
 
         await motion()
-        await asyncio.sleep_ms(20)
+        
 
 # Define configuration
 config['subs_cb'] = sub_cb
@@ -665,7 +622,7 @@ elif not 'rain' in CLIENT_ID:
 config['keepalive'] = 120
 
 # Set up client
-MQTTClient.DEBUG = True  # Optional
+MQTTClient.DEBUG = False  # Optional
 client = MQTTClient(config)
     
 asyncio.create_task(heartbeat())
@@ -676,5 +633,4 @@ try:
 finally:
     client.close()  # Prevent LmacRxBlk:1 errors
     asyncio.new_event_loop()
-
 
