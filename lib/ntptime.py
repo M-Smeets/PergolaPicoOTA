@@ -10,7 +10,7 @@ except:
     import struct
 
 # The NTP host can be configured at runtime by doing: ntptime.host = 'myhost.org'
-host = "0.be.pool.ntp.org"
+host = "pool.ntp.org"
 # The NTP socket timeout can be configured at runtime by doing: ntptime.timeout = 2
 timeout = 1
 
